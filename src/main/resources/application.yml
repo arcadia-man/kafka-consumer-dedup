@@ -22,7 +22,7 @@ server:
 ordersync:
   discovery-interval-millis: 5000
   # Set to true to let the scheduler fire automatically, false for manual control via /demo endpoints
-  scheduler-enabled: false
+  scheduler-enabled: true
 
 x-kafka-templates:
   producer-defaults: &producer-defaults
@@ -52,13 +52,13 @@ kafka:
               <<: *consumer-defaults
               group-id: naive-order-audit-group
               auto-offset-reset: earliest
-              concurrency: 10
+              concurrency: 3
 
             monitor-consumer:
               <<: *consumer-defaults
               group-id: naive-order-monitor-group
               auto-offset-reset: latest
-              concurrency: 10
+              concurrency: 3
 
         order-sync:
           name: orderSync
@@ -69,10 +69,10 @@ kafka:
               <<: *consumer-defaults
               group-id: order-execution-group
               auto-offset-reset: latest
-              concurrency: 10
+              concurrency: 3
 
             reporting-consumer:
               <<: *consumer-defaults
               group-id: order-reporting-group
               auto-offset-reset: earliest
-              concurrency: 10
+              concurrency: 3

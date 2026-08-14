@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.transaction.annotation.Transactional;
+
 @Repository
 public interface NaiveStateRepository extends JpaRepository<NaiveState, String> {
 
@@ -14,6 +16,7 @@ public interface NaiveStateRepository extends JpaRepository<NaiveState, String> 
      * Blind upsert — no version guard.
      * Any thread can overwrite any version, demonstrating the race condition.
      */
+    @Transactional
     @Modifying
     @Query(value = """
             INSERT INTO naive_state (entity_id, version, event_type, data, updated_at)

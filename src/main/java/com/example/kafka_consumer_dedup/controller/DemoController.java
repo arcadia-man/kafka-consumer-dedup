@@ -1,18 +1,20 @@
 package com.example.kafka_consumer_dedup.controller;
 
-import com.example.kafka_consumer_dedup.repository.NaiveStateRepository;
-import com.example.kafka_consumer_dedup.repository.OrderedStateRepository;
-import com.example.kafka_consumer_dedup.repository.SeedDataRepository;
-import com.example.kafka_consumer_dedup.service.OrderSyncPublishService;
-import com.example.kafka_consumer_dedup.service.SeederService;
-import lombok.RequiredArgsConstructor;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import com.example.kafka_consumer_dedup.repository.NaiveStateRepository;
+import com.example.kafka_consumer_dedup.repository.OrderedStateRepository;
+import com.example.kafka_consumer_dedup.repository.SeedDataRepository;
+import com.example.kafka_consumer_dedup.service.OrderSyncPublishService;
+import com.example.kafka_consumer_dedup.service.SeederService;
+
+import lombok.RequiredArgsConstructor;
 
 /**
  * Manual control endpoints for the demo pipeline.
@@ -81,6 +83,18 @@ public class DemoController {
     public ResponseEntity<Map<String, Object>> runAll() {
         String result = publishService.runAllRounds();
         return ResponseEntity.ok(response("run-all", result));
+    }
+
+    /**
+     * Chaos mode — deliberately sends versions out-of-order to the naive topic.
+     * Sends v5, v2, v4, v3 per entity to naive topic (last write = v3 → corrupt).
+     * Sends v2, v3, v4, v5 per entity to ordered topic (guarded upsert → always v5).
+     * This guarantees visible corruption in naive_state without relying on thread timing.
+     */
+    @PostMapping("/chaos")
+    public ResponseEntity<Map<String, Object>> chaos() {
+        String result = publishService.runChaos();
+        return ResponseEntity.ok(response("chaos", result));
     }
 
     private Map<String, Object> response(String action, String message) {

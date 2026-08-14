@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.transaction.annotation.Transactional;
+
 @Repository
 public interface OrderedStateRepository extends JpaRepository<OrderedState, String> {
 
@@ -15,6 +17,7 @@ public interface OrderedStateRepository extends JpaRepository<OrderedState, Stri
      * Because partition routing ensures ordered delivery per entityId,
      * this always converges to the final version without corruption.
      */
+    @Transactional
     @Modifying
     @Query(value = """
             INSERT INTO ordered_state (entity_id, version, event_type, data, updated_at)

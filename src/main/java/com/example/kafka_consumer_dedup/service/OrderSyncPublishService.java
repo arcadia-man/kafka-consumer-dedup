@@ -1,17 +1,19 @@
 package com.example.kafka_consumer_dedup.service;
 
-import com.example.kafka_consumer_dedup.entity.SeedData;
-import com.example.kafka_consumer_dedup.kafka.producer.OrderSyncProducerStrategy;
-import com.example.kafka_consumer_dedup.model.OrderSyncMessage;
-import com.example.kafka_consumer_dedup.repository.SeedDataRepository;
-import lombok.extern.slf4j.Slf4j;
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
+import com.example.kafka_consumer_dedup.entity.SeedData;
+import com.example.kafka_consumer_dedup.kafka.producer.OrderSyncProducerStrategy;
+import com.example.kafka_consumer_dedup.model.OrderSyncMessage;
+import com.example.kafka_consumer_dedup.repository.SeedDataRepository;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Core publish logic extracted from the job so it can be triggered
@@ -115,6 +117,70 @@ public class OrderSyncPublishService {
             sb.append("  ").append(runOneRound()).append("\n");
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * Chaos mode — deliberately sends versions OUT OF ORDER to the naive topic only.
+     *
+     * For each entity it sends: v5, v2, v4, v3 (newest first, then older ones after).
+     * Because the naive consumer has no version guard, the last message processed
+     * (v3 or v2) silently overwrites the correct v5 — guaranteed corruption visible
+     * in naive_state without relying on thread timing.
+     *
+     * The ordered topic still receives messages in correct order (v2→v3→v4→v5)
+     * so ordered_state stays 100% correct by design.
+     *
+     * Updates seed_data to v5 as the expected final state.
+     */
+    public String runChaos() {
+        List<SeedData> entities = seedDataRepository.findAll();
+        if (entities.isEmpty()) {
+            return "seed_data is empty — run POST /demo/seed first.";
+        }
+
+        long[] naiveOutOfOrder  = {5, 2, 4, 3};   // what naive topic receives — out of order
+        long[] orderedInOrder   = {2, 3, 4, 5};    // what ordered topic receives — in order
+
+        log.info("[CHAOS] Sending naive topic versions {} (out-of-order) and ordered topic versions {} (in-order) for {} entities",
+                naiveOutOfOrder, orderedInOrder, entities.size());
+
+        for (SeedData entity : entities) {
+            // Naive topic: out-of-order versions (v5 first, then v2, v4, v3)
+            for (long ver : naiveOutOfOrder) {
+                naiveProducer.send(naiveTopic, OrderSyncMessage.builder()
+                        .entityId(entity.getEntityId())
+                        .version(ver)
+                        .eventType("UPDATE")
+                        .data(entity.getData())
+                        .build());
+            }
+
+            // Ordered topic: correct order (v2→v3→v4→v5)
+            for (long ver : orderedInOrder) {
+                orderedProducer.send(orderedTopic, OrderSyncMessage.builder()
+                        .entityId(entity.getEntityId())
+                        .version(ver)
+                        .eventType("UPDATE")
+                        .data(entity.getData())
+                        .build());
+            }
+
+            // Ground truth = v5
+            entity.setVersion(5L);
+            entity.setEventType("UPDATE");
+            entity.setUpdatedAt(Instant.now());
+        }
+
+        seedDataRepository.saveAll(entities);
+        completed.set(true);
+
+        return String.format(
+                "Chaos run complete for %d entities.\n" +
+                "  naive topic received versions: 5, 2, 4, 3 (out-of-order) — last write wins → corruption expected.\n" +
+                "  ordered topic received versions: 2, 3, 4, 5 (in-order)   — guarded upsert → correct.\n" +
+                "  seed_data updated to version=5.\n" +
+                "  Run GET /verify to see the difference.",
+                entities.size());
     }
 
     /** Resets the completed flag so rounds can be re-run after a reset. */
